@@ -70,7 +70,6 @@
     "recharts": "^2.15.4",
     "styled-components": "^6.1.8",
     "tailwindcss-colors": "^2.0.0",
-    "ui": "github:shadcn/ui",
     "victory": "^37.3.6",
     "web-vitals": "^5.0.3",
     "xlsx": "^0.18.5",
