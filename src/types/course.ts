@@ -1,25 +1,28 @@
 export type DayKey = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday';
 
+// 백엔드 type 그대로 반영
+export type CourseType = 'GR' | 'GE' | 'MR' | 'ME' | 'RE' | 'FE';
+
 export interface CourseCore {
     id: string;
-    name: string;
-    day: DayKey;
-    startPeriod: number; // 1~14
-    endPeriod: number;   // 1~14
-    credits: number;
+    name: string;       // 과목명
+    code: string;       // 과목 코드
+    day: DayKey;        // 요일
+    startPeriod: number;
+    endPeriod: number;
+    credits: number;    // 학점
     room: string;
-    type: 'required' | 'elective' | 'liberal';
-    code?: string;
-    instructor?: string;
-    // 커리큘럼 관리용 속성
+    type: CourseType;   // 'GR' | 'GE' | 'MR' | 'ME' | 'RE' | 'FE'
+    instructor: string;
+
+    // 선택 속성
     locked?: boolean;
     starred?: boolean;
     selected?: boolean;
+    color?: string;
 }
 
 export interface Course extends CourseCore {
-    startTime: string; // '09:30'
-    endTime: string;   // '10:20'
-    code: string;
-    instructor: string;
-} 
+    startTime: string;  // '09:30'
+    endTime: string;    // '10:20'
+}

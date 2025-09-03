@@ -1,4 +1,5 @@
 import apiClient from '../config/apiClient';
+import { courseToSlot } from "@/utils/mapper";
 
 // 캐시와 debouncing을 위한 유틸리티
 const cache = new Map<string, { data: any; timestamp: number; ttl: number }>();
@@ -83,11 +84,16 @@ export interface BackendCurriculum {
 }
 
 export interface BackendTimetable {
-    id: string;
-    semester: string;
+    id: number;
+    userId: number;
+    semesterCode: string;
     year: number;
-    courses: any[];
+    created_at: string;
+    updated_at: string;
+    courses?: any[];
+    TimetableSlots?: any[];
 }
+
 
 export interface BackendNote {
     id: string;
@@ -201,7 +207,6 @@ class ApiService {
         }
     }
     
-    // ===== 시간표 관리 =====
     async getSemesters(): Promise<string[]> {
         console.log('[ApiService] Fetching semesters');
         try {
@@ -210,10 +215,357 @@ class ApiService {
             return res.data || [];
         } catch (error) {
             console.error('[ApiService] Failed to fetch semesters:', error);
-            return [];
+            // 에러 발생 시 기본 학기 목록 반환
+            const currentYear = new Date().getFullYear();
+            return [
+                `${currentYear-1}-2학기`,
+                `${currentYear}-1학기`,
+                `${currentYear}-2학기`
+            ];
         }
     }
 
+// ===== 시간표 관리 (완전 연동) =====
+    
+    /**
+     * 현재 학기 시간표 조회
+     */
+    async getCurrentTimetable(semester: string): Promise<BackendTimetable | null> {
+        console.log('[ApiService] Fetching current timetable');
+        try {
+            const { data: res } = await apiClient.get<ApiResponse<BackendTimetable>>('/timetable/current',
+                { params: { semester } } 
+            );
+            if (!res.success) {
+                console.warn('[ApiService] Current timetable not found:', res.message);
+                return null;
+            }
+            console.log('[ApiService] Current timetable loaded successfully');
+            return res.data || null;
+        } catch (error: any) {
+            if (error.response?.status === 404) {
+                console.log('[ApiService] No current timetable exists');
+                return null;
+            }
+            console.error('[ApiService] Failed to fetch current timetable:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 특정 학기 시간표 조회
+     */
+    async getTimetableBySemester(semester: string): Promise<BackendTimetable | null> {
+        console.log('[ApiService] Fetching timetable for semester:', semester);
+        try {
+            const encoded = encodeURIComponent(semester);  // 👈 인코딩 추가
+            const { data: res } = await apiClient.get<ApiResponse<BackendTimetable>>(`/timetable/semester/${encoded}`);
+            if (!res.success) {
+                console.warn('[ApiService] Timetable not found for semester:', semester);
+                return null;
+            }
+            console.log('[ApiService] Semester timetable loaded successfully');
+            return res.data || null;
+        } catch (error: any) {
+            if (error.response?.status === 404) {
+                console.log('[ApiService] No timetable exists for semester:', semester);
+                return null;
+            }
+            console.error('[ApiService] Failed to fetch semester timetable:', error);
+            throw error;
+        }
+    }
+
+
+    /**
+     * 시간표 저장 (새로 생성 또는 업데이트)
+     */
+    async saveTimetable(timetableData: {
+        semester: string;
+        courses: any[];
+        updatedAt?: string;
+    }): Promise<BackendTimetable> {
+        console.log('[ApiService] Saving timetable:', timetableData);
+        
+        try {
+            // 데이터 검증
+            if (!timetableData.semester) {
+                throw new Error('Semester is required');
+            }
+            if (!Array.isArray(timetableData.courses)) {
+                throw new Error('Courses must be an array');
+            }
+
+            const payload = {
+                semesterCode: timetableData.semester, 
+                courses: (timetableData.courses || []).map(course => courseToSlot(course)),
+                year: new Date().getFullYear(),
+                updatedAt: timetableData.updatedAt || new Date().toISOString()
+            };
+
+            // 기존 시간표가 있는지 확인
+            const existingTimetable = await this.getTimetableBySemester(timetableData.semester);
+            
+            let response;
+            if (existingTimetable?.id) {
+                // 업데이트
+                console.log('[ApiService] Updating existing timetable');
+                response = await apiClient.put<ApiResponse<BackendTimetable>>(
+                    `/timetable/${existingTimetable.id}`, 
+                    payload
+                );
+            } else {
+                // 새로 생성
+                console.log('[ApiService] Creating new timetable');
+                response = await apiClient.post<ApiResponse<BackendTimetable>>(
+                    '/timetable', 
+                    payload
+                );
+            }
+
+            if (!response.data.success) {
+                throw new Error(response.data.message || 'Failed to save timetable');
+            }
+
+            console.log('[ApiService] Timetable saved successfully');
+            return response.data.data;
+        } catch (error) {
+            console.error('[ApiService] Failed to save timetable:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 시간표 삭제
+     */
+    async deleteTimetable(semester: string): Promise<boolean> {
+        console.log('[ApiService] Deleting timetable for semester:', semester);
+        
+        try {
+            const existingTimetable = await this.getTimetableBySemester(semester);
+            
+            if (!existingTimetable?.id) {
+                console.log('[ApiService] No timetable to delete for semester:', semester);
+                return true; // 이미 없으면 성공으로 간주
+            }
+
+            const { data: res } = await apiClient.delete<ApiResponse<boolean>>(
+                `/timetable/${existingTimetable.id}`
+            );
+
+            if (!res.success) {
+                throw new Error(res.message || 'Failed to delete timetable');
+            }
+
+            console.log('[ApiService] Timetable deleted successfully');
+            return true;
+        } catch (error) {
+            console.error('[ApiService] Failed to delete timetable:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 시간표에 과목 추가
+     */
+    async addCourseToTimetable(semester: string, courseData: {
+        name: string;
+        code?: string;
+        instructor?: string;
+        credits?: number;
+        type?: string;
+        day: string;
+        startTime: string;
+        endTime: string;
+        startPeriod?: number;
+        endPeriod?: number;
+        room?: string;
+    }): Promise<BackendTimetable> {
+        console.log('[ApiService] Adding course to timetable:', courseData);
+        
+        try {
+            const currentTimetable = await this.getTimetableBySemester(semester);
+            
+            const newCourse = {
+                id: Date.now().toString(),
+                ...courseData
+            };
+
+            const updatedCourses = currentTimetable 
+                ? [...(currentTimetable.courses || []), newCourse]
+                : [newCourse];
+
+            return await this.saveTimetable({
+                semester,
+                courses: updatedCourses
+            });
+        } catch (error) {
+            console.error('[ApiService] Failed to add course to timetable:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 시간표에서 과목 제거
+     */
+    async removeCourseFromTimetable(semester: string, courseId: string): Promise<BackendTimetable> {
+        console.log('[ApiService] Removing course from timetable:', courseId);
+        
+        try {
+            const currentTimetable = await this.getTimetableBySemester(semester);
+            
+            if (!currentTimetable?.courses) {
+                throw new Error('No timetable found for semester: ' + semester);
+            }
+
+            const updatedCourses = currentTimetable.courses.filter(
+                (course: any) => course.id !== courseId
+            );
+
+            return await this.saveTimetable({
+                semester,
+                courses: updatedCourses
+            });
+        } catch (error) {
+            console.error('[ApiService] Failed to remove course from timetable:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 시간표 과목 수정
+     */
+    async updateCourseInTimetable(semester: string, courseId: string, updates: Partial<{
+        name: string;
+        code: string;
+        instructor: string;
+        credits: number;
+        type: string;
+        day: string;
+        startTime: string;
+        endTime: string;
+        startPeriod: number;
+        endPeriod: number;
+        room: string;
+    }>): Promise<BackendTimetable> {
+        console.log('[ApiService] Updating course in timetable:', courseId, updates);
+        
+        try {
+            const currentTimetable = await this.getTimetableBySemester(semester);
+            
+            if (!currentTimetable?.courses) {
+                throw new Error('No timetable found for semester: ' + semester);
+            }
+
+            const updatedCourses = currentTimetable.courses.map((course: any) => 
+                course.id === courseId 
+                    ? { ...course, ...updates }
+                    : course
+            );
+
+            return await this.saveTimetable({
+                semester,
+                courses: updatedCourses
+            });
+        } catch (error) {
+            console.error('[ApiService] Failed to update course in timetable:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 사용자의 모든 시간표 조회
+     */
+    async getAllTimetables(): Promise<BackendTimetable[]> {
+        console.log('[ApiService] Fetching all user timetables');
+        try {
+            const { data: res } = await apiClient.get<ApiResponse<BackendTimetable[]>>('/timetable/all');
+            if (!res.success) {
+                throw new Error(res.message || 'Failed to fetch all timetables');
+            }
+            console.log('[ApiService] All timetables loaded successfully');
+            return res.data || [];
+        } catch (error) {
+            console.error('[ApiService] Failed to fetch all timetables:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 시간표 복사
+     */
+    async copyTimetable(fromSemester: string, toSemester: string): Promise<BackendTimetable> {
+        console.log('[ApiService] Copying timetable from', fromSemester, 'to', toSemester);
+        
+        try {
+            const sourceTimetable = await this.getTimetableBySemester(fromSemester);
+            
+            if (!sourceTimetable) {
+                throw new Error('Source timetable not found: ' + fromSemester);
+            }
+
+            return await this.saveTimetable({
+                semester: toSemester,
+                courses: sourceTimetable.courses || []
+            });
+        } catch (error) {
+            console.error('[ApiService] Failed to copy timetable:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 시간표 충돌 검사
+     */
+    async checkTimetableConflicts(semester: string, newCourse: {
+        day: string;
+        startTime: string;
+        endTime: string;
+        startPeriod?: number;
+        endPeriod?: number;
+    }): Promise<{
+        hasConflict: boolean;
+        conflicts: any[];
+    }> {
+        console.log('[ApiService] Checking timetable conflicts');
+        
+        try {
+            const currentTimetable = await this.getTimetableBySemester(semester);
+            
+            if (!currentTimetable?.courses) {
+                return { hasConflict: false, conflicts: [] };
+            }
+
+            const conflicts = currentTimetable.courses.filter((course: any) => {
+                if (course.day !== newCourse.day) return false;
+                
+                // 시간 기반 충돌 검사
+                if (newCourse.startTime && newCourse.endTime && course.startTime && course.endTime) {
+                    const newStart = new Date(`1970-01-01 ${newCourse.startTime}`);
+                    const newEnd = new Date(`1970-01-01 ${newCourse.endTime}`);
+                    const existingStart = new Date(`1970-01-01 ${course.startTime}`);
+                    const existingEnd = new Date(`1970-01-01 ${course.endTime}`);
+                    
+                    return (newStart < existingEnd && newEnd > existingStart);
+                }
+                
+                // 교시 기반 충돌 검사
+                if (newCourse.startPeriod && newCourse.endPeriod && course.startPeriod && course.endPeriod) {
+                    return (newCourse.startPeriod < course.endPeriod && newCourse.endPeriod > course.startPeriod);
+                }
+                
+                return false;
+            });
+
+            return {
+                hasConflict: conflicts.length > 0,
+                conflicts
+            };
+        } catch (error) {
+            console.error('[ApiService] Failed to check conflicts:', error);
+            throw error;
+        }
+    }
 
     // ===== 수강 기록 관리 =====
     async getRecords(): Promise<BackendRecord[]> {
@@ -280,32 +632,6 @@ class ApiService {
         } catch (error) {
             console.error('[ApiService] Failed to fetch curriculum:', error);
             return null;
-        }
-    }
-
-    // ===== 시간표 관리 =====
-    async getCurrentTimetable(): Promise<BackendTimetable | null> {
-        console.log('[ApiService] Fetching current timetable');
-        try {
-            const { data: res } = await apiClient.get<ApiResponse<BackendTimetable>>('/timetable/current');
-            if (!res.success) throw new Error(res.message || 'Failed to fetch timetable');
-            // 데이터가 null 이면 현재 학기 시간표 없음으로 간주
-            return res.data || null;
-        } catch (error) {
-            console.warn('[ApiService] No current timetable found:', error);
-            return null;
-        }
-    }
-
-    async saveTimetable(timetable: Omit<BackendTimetable, 'id'>): Promise<BackendTimetable> {
-        console.log('[ApiService] Saving timetable:', timetable);
-        try {
-            const { data: res } = await apiClient.post<ApiResponse<BackendTimetable>>('/timetable', timetable);
-            if (!res.success) throw new Error(res.message || 'Failed to save timetable');
-            return res.data;
-        } catch (error) {
-            console.error('[ApiService] Failed to save timetable:', error);
-            throw error;
         }
     }
 

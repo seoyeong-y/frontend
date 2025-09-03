@@ -17,8 +17,10 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
     (config) => {
         const token = localStorage.getItem('accessToken');
+        console.log("[DEBUG] axios interceptor token:", token);
         if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
+            (config.headers as any)['Authorization'] = `Bearer ${token}`;
+            console.log("[DEBUG] Authorization header set:", (config.headers as any)["Authorization"]);
         }
         return config;
     },
@@ -54,7 +56,7 @@ apiClient.interceptors.response.use(
                         localStorage.setItem('refreshToken', newRefreshToken);
                     }
 
-                    originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+                    (originalRequest.headers as any)['Authorization'] = `Bearer ${newAccessToken}`;
                     return apiClient(originalRequest);
                 }
             } catch (refreshError) {

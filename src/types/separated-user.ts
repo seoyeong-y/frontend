@@ -69,12 +69,13 @@ export interface Subject {
 export interface Schedule {
     userId: string; // User.id 참조
     currentSemester: string;
-    timetable: TimetableSlot[];
+    timetable: Course[];
     customEvents: CustomEvent[];
     updatedAt: string;
 }
 
 export interface TimetableSlot {
+    courseName: string;
     id: string;
     subjectId: string;
     subjectName: string;
@@ -295,3 +296,16 @@ export const createDefaultStatistics = (userId: string): UserStatistics => ({
     favoriteCoursesCount: 0,
     updatedAt: new Date().toISOString()
 }); 
+
+export interface Course {
+    id: string;
+    name: string;
+    code: string;
+    instructor: string;
+    day: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday';
+    startPeriod: number;
+    endPeriod: number;
+    startTime: string;
+    endTime: string;
+    room: string;
+}

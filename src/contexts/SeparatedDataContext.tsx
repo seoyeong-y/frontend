@@ -1,5 +1,4 @@
 // src/contexts/SeparatedDataContext.tsx
-// 1대1 데이터 분리 구조를 사용하는 새로운 DataContext
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { Course } from '../types/course';
@@ -64,62 +63,41 @@ import {
 
 import { useAuth } from '../contexts/AuthContext';
 
-// DataContext 타입 정의 (기존과 동일한 인터페이스 유지)
+// ==== 타입 정의 (생략 부분은 그대로 유지) ====
 interface SeparatedDataContextType {
-    // 기본 데이터
-    userData: any; // 호환성을 위해 유지
+    userData: any;
     isLoading: boolean;
     error: string | null;
     lastUpdated: string | null;
-
-    // 데이터 새로고침
     refreshData: () => void;
-
-    // 프로필 관리
     profile: UserProfile;
     updateProfile: (profile: Partial<UserProfile>) => void;
-    updateUserData: (data: any) => void; // 호환성을 위해 추가
-    updateUserField: (field: string, value: any) => void; // 호환성을 위해 추가
-
-    // 졸업 정보 관리
+    updateUserData: (data: any) => void;
+    updateUserField: (field: string, value: any) => void;
     graduationInfo: GraduationInfo;
     updateGraduationInfo: (info: Partial<GraduationInfo>) => void;
-
-    // 커리큘럼 관리
+    curriculum: Curriculum;
+    updateCurriculum: (curriculum: Partial<Curriculum>) => void;
     getCurriculums: () => Promise<Course[]>;
     addCurriculum: (curriculum: Course) => Promise<void>;
     applyCurriculum: (curriculum: Course) => Promise<void>;
-
-    // 시간표 관리
     schedule: Schedule;
     updateSchedule: (schedule: Partial<Schedule>) => void;
-
-    // 메모 관리
     notes: Note[];
     addNote: (note: Omit<Note, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<Note | null>;
     updateNote: (id: string, note: Partial<Note>) => Promise<Note | null>;
     deleteNote: (id: string) => Promise<boolean>;
-
-    // 채팅 메시지 관리
     messages: ChatMessage[];
     addMessage: (message: Omit<ChatMessage, 'id' | 'userId' | 'timestamp'>) => void;
     clearMessages: () => void;
-
-    // 온보딩 관리
     onboarding: Onboarding;
     updateOnboarding: (onboarding: Partial<Onboarding>) => void;
-
-    // 설정 관리
     settings: UserSettings;
     updateSettings: (settings: Partial<UserSettings>) => void;
-
-    // 과목 관리 (기존 호환성)
     courses: Subject[];
     completedCourses: Subject[];
     timetableCourses: Subject[];
     graduationRequirements: Subject[];
-
-    // 과목 관련 메서드들 (기존 호환성)
     addCourse: (course: Subject) => Promise<void>;
     updateCourse: (course: Subject) => Promise<void>;
     removeCourse: (courseId: string) => Promise<void>;
@@ -129,26 +107,22 @@ interface SeparatedDataContextType {
     addTimetableCourse: (course: Subject) => Promise<void>;
     updateTimetableCourse: (course: Subject) => Promise<void>;
     removeTimetableCourse: (courseId: string) => Promise<void>;
-
-    // 새로운 기능들
     favorites: string[];
     addToFavorites: (courseId: string) => void;
     removeFromFavorites: (courseId: string) => void;
     isFavorite: (courseId: string) => boolean;
-
     recentSearches: string[];
     addRecentSearch: (searchTerm: string) => void;
     clearRecentSearches: () => void;
-
     notifications: NotificationItem[];
     addNotification: (notification: Omit<NotificationItem, 'id' | 'userId' | 'timestamp'>) => void;
     markNotificationAsRead: (notificationId: string) => void;
     clearNotifications: () => void;
-
     statistics: UserStatistics;
     updateStatistics: (updates: Partial<UserStatistics>) => void;
 }
 
+// === Context 생성 ===
 const SeparatedDataContext = createContext<SeparatedDataContextType | undefined>(undefined);
 
 interface SeparatedDataProviderProps {
@@ -882,6 +856,8 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
         updateGraduationInfo: handleUpdateGraduationInfo,
 
         // 커리큘럼 관리
+        curriculum: defaultCurriculum,
+        updateCurriculum: handleUpdateCurriculum,
         getCurriculums,
         addCurriculum,
         applyCurriculum,
@@ -951,36 +927,113 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
     );
 };
 
-export const useSeparatedData = () => {
-    const context = useContext(SeparatedDataContext);
-    if (context === undefined) {
-        throw new Error('useSeparatedData must be used within a SeparatedDataProvider');
-    }
-    return context;
-};
-
-// 호환성을 위한 alias
-export const useData = useSeparatedData;
-
-export const useCurriculum = () => {
-    const { curriculum, updateCurriculum } = useSeparatedData();
-    return { curriculum, updateCurriculum };
-};
-
 export const useSchedule = (semester: string) => {
     const { schedule, updateSchedule, isLoading } = useSeparatedData();
 
+    // 변환 함수들
+    const mapBackendToCourse = (slot: any): Course => ({
+        id: slot.id,
+        code: slot.codeId?.toString() || slot.code || '',
+        name: slot.courseName,
+        day: slot.dayOfWeek,
+        startPeriod: slot.startPeriod,
+        endPeriod: slot.endPeriod,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        room: slot.room,
+        instructor: slot.instructor,
+        credits: slot.credits,
+        type: slot.type,
+        color: slot.color
+    });
+
+    const mapCourseToBackend = (course: Course) => ({
+        codeId: course.code,
+        courseName: course.name,
+        dayOfWeek: course.day,
+        startPeriod: course.startPeriod,
+        endPeriod: course.endPeriod,
+        startTime: course.startTime,
+        endTime: course.endTime,
+        room: course.room,
+        instructor: course.instructor,
+        credits: course.credits,
+        type: course.type,
+        color: course.color
+    });
+
+    useEffect(() => {
+        if (!semester) return;
+        
+        const loadData = async () => {
+            try {
+                const { apiService } = await import('../services/ApiService');
+                console.log('[useSchedule] Auto loading semester:', semester);
+                
+                const backendTimetable = await apiService.getTimetableBySemester(semester);
+                const slots = backendTimetable?.TimetableSlots || backendTimetable?.courses || [];
+                
+                if (slots.length > 0) {
+                    const mapped = slots.map(mapBackendToCourse);
+                    console.log('[useSchedule] Loaded courses:', mapped);
+                    updateSchedule({
+                        timetable: mapped,
+                        currentSemester: semester
+                    });
+                } else {
+                    console.log('[useSchedule] No courses found for semester:', semester);
+                    updateSchedule({
+                        timetable: [],
+                        currentSemester: semester
+                    });
+                }
+            } catch (error) {
+                console.error('[useSchedule] Failed to load schedule:', error);
+                updateSchedule({
+                    timetable: [],
+                    currentSemester: semester
+                });
+            }
+        };
+
+        loadData();
+    }, [semester, updateSchedule]);
+
+    // 백엔드에서 학기별 시간표 로드
     const loadSchedule = async () => {
-        return schedule.timetable;
+        const { apiService } = await import('../services/ApiService');
+        console.log('[useSchedule] loadSchedule semester:', semester);
+        
+        const backendTimetable = await apiService.getTimetableBySemester(semester);
+
+        const slots = backendTimetable?.TimetableSlots || backendTimetable?.courses || [];
+        if (slots.length) {
+            const mapped = slots.map(mapBackendToCourse);
+            updateSchedule({
+                timetable: mapped,
+                currentSemester: semester
+            });
+            return mapped;
+        }
+        return [];
     };
 
+    // 프론트에서 추가/수정된 과목 저장 시 → 백엔드에도 반영
     const saveSchedule = async (newCourses: Course[]) => {
-        const updatedSchedule = {
-            ...schedule,
-            currentSemester: semester,
-            timetable: newCourses
-        };
-        updateSchedule(updatedSchedule);
+        const { apiService } = await import('../services/ApiService');
+        console.log('[useSchedule] saveSchedule semester:', semester, newCourses);
+
+        const payload = newCourses.map(mapCourseToBackend);
+        await apiService.saveTimetable({
+            semester,
+            courses: payload,
+            updatedAt: new Date().toISOString()
+        });
+
+        updateSchedule({
+            timetable: newCourses,
+            currentSemester: semester
+        });
     };
 
     return {
@@ -990,4 +1043,17 @@ export const useSchedule = (semester: string) => {
         loadSchedule,
         saveSchedule
     };
-}; 
+};
+
+export const useSeparatedData = () => {
+    const context = useContext(SeparatedDataContext);
+    if (context === undefined) {
+        throw new Error('useSeparatedData must be used within a SeparatedDataProvider');
+    }
+    return context;
+};
+export const useData = useSeparatedData;
+export const useCurriculum = () => {
+    const { curriculum, updateCurriculum } = useSeparatedData();
+    return { curriculum, updateCurriculum };
+};

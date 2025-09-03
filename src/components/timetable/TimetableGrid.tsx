@@ -10,6 +10,7 @@ interface TimetableGridProps {
 }
 
 const TimetableGrid: React.FC<TimetableGridProps> = ({ courses, onCourseClick, highlightCourseId }) => {
+    console.log('[DEBUG] TimetableGrid props.courses:', courses);
     return (
         <div className="flex-grow relative bg-white rounded-2xl shadow-xl overflow-hidden p-1">
             <div className="overflow-auto h-full" style={{ scrollbarWidth: 'none' }}>
@@ -54,9 +55,19 @@ const TimetableGrid: React.FC<TimetableGridProps> = ({ courses, onCourseClick, h
 
                     {/* Course Blocks */}
                     <div className="col-start-2 col-span-5 row-start-2 row-span-full grid grid-cols-5 grid-rows-[repeat(14,56px)]">
-                        {courses.map(course => (
-                            <CourseBlock key={course.id} course={course} onClick={onCourseClick} highlight={highlightCourseId === course.id} />
-                        ))}
+                    {courses.map(course => {
+                        if (!course.day) {
+                            console.warn("Invalid course day:", course);
+                        }
+                        return (
+                            <CourseBlock
+                                key={course.id}
+                                course={course}
+                                onClick={onCourseClick}
+                                highlight={highlightCourseId === course.id}
+                            />
+                        );
+                        })}
                     </div>
                 </div>
             </div>
