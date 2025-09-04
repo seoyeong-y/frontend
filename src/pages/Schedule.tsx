@@ -149,6 +149,11 @@ const Schedule: React.FC = () => {
             setSemester(pinnedSemester);
         }
     }, [pinnedSemester]);
+    
+    useEffect(() => {
+        console.log('=== Schedule.tsx 학기 변경 감지 ===');
+        console.log('현재 semester 상태:', semester);
+    }, [semester]);
 
     const { courses: timetableSlots, isLoading, saveSchedule } = useSchedule(semester);
 
@@ -185,8 +190,8 @@ const Schedule: React.FC = () => {
         try {
             const { apiService } = await import('../services/ApiService');
             const backendTimetable = await apiService.getCurrentTimetable(semester);
-            console.log('[DEBUG] backendTimetable raw:', JSON.stringify(backendTimetable, null, 2));
-            
+                console.log('[DEBUG] backendTimetable raw:', JSON.stringify(backendTimetable, null, 2));
+                
             setLastSyncTime(new Date());
         } catch (error) {
             console.warn('[Schedule] Sync failed:', error);
@@ -195,7 +200,7 @@ const Schedule: React.FC = () => {
             setIsDataSyncing(false);
         }
     }, [user?.email, semester, showSnackbar]);  
-    
+
     useEffect(() => {
         if (!user?.email) return;
 
@@ -214,9 +219,32 @@ const Schedule: React.FC = () => {
         }
     }, [user?.email, syncDataWithBackend]);
 
+    useEffect(() => {
+        console.log('=== Schedule.tsx 디버깅 ===');
+        console.log('📊 timetableSlots:', timetableSlots);
+        console.log('📈 timetableSlots 길이:', timetableSlots?.length);
+        console.log('⏳ isLoading:', isLoading);
+        console.log('🎯 semester:', semester);
+        
+        if (timetableSlots && timetableSlots.length > 0) {
+            console.log('🎉 Schedule.tsx에서 과목 감지!');
+            console.log('🎉 첫 번째 과목 샘플:', timetableSlots[0]);
+            console.log('📋 모든 과목:', timetableSlots.map(c => `${c.name} (${c.day})`));
+        } else {
+            console.log('😢 Schedule.tsx에서 timetableSlots가 비어있음');
+            console.log('🔍 timetableSlots 타입:', typeof timetableSlots);
+            console.log('🔍 timetableSlots === null?', timetableSlots === null);
+            console.log('🔍 timetableSlots === undefined?', timetableSlots === undefined);
+        }
+        
+        // TimetableGrid에 전달되는 props도 확인
+        console.log('📤 TimetableGrid에 전달할 courses:', timetableSlots);
+    }, [timetableSlots, isLoading, semester]);
+
     // TimetableSlot을 Course로 변환
     const courses = timetableSlots;
-    console.log('[DEBUG] 최종 courses:', courses);
+    console.log('[DEBUG] 최종 courses (Schedule.tsx):', courses);
+    console.log('[DEBUG] courses === timetableSlots?', courses === timetableSlots);
     const { open: openDialog, data: dialogCourse, openDialog: showDialog, closeDialog } = useDialog<Course>();
     const { open: openDetailDialog, data: detailCourse, openDialog: showDetail, closeDialog: closeDetail } = useDialog<Course>();
     const { open: openExcelModal, data: imageCourse, openDialog: showExcelModal, closeDialog: closeExcelModal } = useDialog<Course>();
@@ -356,7 +384,9 @@ const Schedule: React.FC = () => {
     };
 
     const handleSemesterChange = (e: SelectChangeEvent) => {
-        setSemester(e.target.value);
+        const newSemester = e.target.value;
+        console.log(`🔄 [Schedule] 학기 변경: ${semester} -> ${newSemester}`);
+        setSemester(newSemester);
     };
 
     // 초기화 다이얼로그 상태

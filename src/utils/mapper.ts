@@ -6,6 +6,8 @@ const dayMap: Record<string, DayKey> = {
   WED: "wednesday",
   THU: "thursday",
   FRI: "friday",
+  SAT: "saturday",
+  SUN: "sunday",
 };
 
 const reverseDayMap: Record<DayKey, string> = {
@@ -14,6 +16,8 @@ const reverseDayMap: Record<DayKey, string> = {
   wednesday: "WED",
   thursday: "THU",
   friday: "FRI",
+  saturday: "SAT",
+  sunday: "SUN"
 };
 
 // slot → course

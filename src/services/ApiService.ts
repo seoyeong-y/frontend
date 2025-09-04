@@ -231,23 +231,34 @@ class ApiService {
      * 현재 학기 시간표 조회
      */
     async getCurrentTimetable(semester: string): Promise<BackendTimetable | null> {
-        console.log('[ApiService] Fetching current timetable');
+        console.log('[ApiService] Fetching current timetable for semester:', semester);
         try {
-            const { data: res } = await apiClient.get<ApiResponse<BackendTimetable>>('/timetable/current',
-                { params: { semester } } 
-            );
+            const response = await apiClient.get<ApiResponse<BackendTimetable>>('/timetable/current', {
+                params: { semester }
+            });
+            
+            console.log('[ApiService] Current timetable raw response:', response.data);
+            
+            const { data: res } = response;
             if (!res.success) {
                 console.warn('[ApiService] Current timetable not found:', res.message);
                 return null;
             }
-            console.log('[ApiService] Current timetable loaded successfully');
+            
+            console.log('[ApiService] Current timetable loaded successfully:', res.data);
             return res.data || null;
         } catch (error: any) {
             if (error.response?.status === 404) {
                 console.log('[ApiService] No current timetable exists');
                 return null;
             }
-            console.error('[ApiService] Failed to fetch current timetable:', error);
+            
+            console.error('[ApiService] Failed to fetch current timetable:', {
+                message: error.message,
+                status: error.response?.status,
+                data: error.response?.data
+            });
+            
             throw error;
         }
     }
@@ -264,14 +275,27 @@ class ApiService {
                 console.warn('[ApiService] Timetable not found for semester:', semester);
                 return null;
             }
-            console.log('[ApiService] Semester timetable loaded successfully');
+            const timetableData = res.data;
+            console.log('[ApiService] Parsed timetable data:', JSON.stringify(timetableData, null, 2));
+        
+            if (timetableData) {
+                console.log('[ApiService] Timetable data keys:', Object.keys(timetableData));
+                console.log('[ApiService] TimetableSlots:', timetableData.TimetableSlots);
+                console.log('[ApiService] courses:', timetableData.courses);
+            }
             return res.data || null;
         } catch (error: any) {
             if (error.response?.status === 404) {
                 console.log('[ApiService] No timetable exists for semester:', semester);
                 return null;
             }
-            console.error('[ApiService] Failed to fetch semester timetable:', error);
+            console.error('[ApiService] Failed to fetch semester timetable:', {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                data: error.response?.data,
+                url: error.config?.url
+            });
             throw error;
         }
     }

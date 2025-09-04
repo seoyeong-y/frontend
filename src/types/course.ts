@@ -1,4 +1,4 @@
-export type DayKey = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday';
+export type DayKey = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
 
 // 백엔드 type 그대로 반영
 export type CourseType = 'GR' | 'GE' | 'MR' | 'ME' | 'RE' | 'FE';

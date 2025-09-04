@@ -1,7 +1,7 @@
 // src/contexts/SeparatedDataContext.tsx
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
-import { Course } from '../types/course';
+import { Course, DayKey, CourseType } from '../types/course';
 import {
     UserProfile,
     GraduationInfo,
@@ -457,12 +457,81 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
         setCurriculum(updated);
     }, [currentUserId]);
 
+
+    const defaultSchedule: Schedule = schedule || {
+        userId: currentUserId || '',
+        currentSemester: '',
+        timetable: [],
+        customEvents: [],
+        updatedAt: new Date().toISOString()
+    };
+
+
+    const updateUserField = (field: string, value: any) => {
+        if (!currentUserEmail) return;
+
+        // 필드별로 적절한 엔티티 업데이트
+        switch (field) {
+            case 'profile':
+                if (profile) {
+                    handleUpdateProfile({ ...profile, ...value });
+                }
+                break;
+            case 'graduationInfo':
+                if (graduationInfo) {
+                    handleUpdateGraduationInfo({ ...graduationInfo, ...value });
+                }
+                break;
+            case 'curriculum':
+                if (curriculum) {
+                    handleUpdateCurriculum({ ...curriculum, ...value });
+                }
+                break;
+            case 'schedule':
+                if (schedule) {
+                    handleUpdateSchedule({ ...schedule, ...value });
+                }
+                break;
+            case 'onboarding':
+                if (onboarding) {
+                    handleUpdateOnboarding({ ...onboarding, ...value });
+                }
+                break;
+            case 'settings':
+                if (settings) {
+                    handleUpdateSettings({ ...settings, ...value });
+                }
+                break;
+            case 'statistics':
+                if (statistics) {
+                    handleUpdateStatistics({ ...statistics, ...value });
+                }
+                break;
+            default:
+                console.warn(`Unknown field: ${field}`);
+        }
+    };
+
     // 시간표 관리
-    const handleUpdateSchedule = useCallback((updates: Partial<Schedule>) => {
-        if (!currentUserId) return;
-        const updated = updateSchedule(currentUserId, updates);
-        setSchedule(updated);
-    }, [currentUserId]);
+    const handleUpdateSchedule = useCallback(async (scheduleUpdate: Partial<Schedule>) => {
+        console.log('🔄 [handleUpdateSchedule] 호출됨!');
+        console.log('🔄 [handleUpdateSchedule] 입력 데이터:', scheduleUpdate);
+        
+        const updatedSchedule = { 
+            userId: user?.email || '',
+            currentSemester: scheduleUpdate.currentSemester || '',
+            timetable: scheduleUpdate.timetable || [],
+            customEvents: scheduleUpdate.customEvents || [],
+            updatedAt: new Date().toISOString()
+        };
+        
+        console.log('🔄 [handleUpdateSchedule] 최종 schedule:', updatedSchedule);
+        console.log('🔄 [handleUpdateSchedule] timetable 개수:', updatedSchedule.timetable?.length);
+        
+        // 🔥 메모리 상태만 업데이트 (로컬스토리지 완전 제거)
+        setSchedule(updatedSchedule);
+        console.log('✅ [handleUpdateSchedule] 완료! 백엔드 API만 사용합니다.');
+    }, [user?.email]);
 
     // 온보딩 관리
     const handleUpdateOnboarding = useCallback((updates: Partial<Onboarding>) => {
@@ -667,50 +736,6 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
         }
     };
 
-    const updateUserField = (field: string, value: any) => {
-        if (!currentUserEmail) return;
-
-        // 필드별로 적절한 엔티티 업데이트
-        switch (field) {
-            case 'profile':
-                if (profile) {
-                    handleUpdateProfile({ ...profile, ...value });
-                }
-                break;
-            case 'graduationInfo':
-                if (graduationInfo) {
-                    handleUpdateGraduationInfo({ ...graduationInfo, ...value });
-                }
-                break;
-            case 'curriculum':
-                if (curriculum) {
-                    handleUpdateCurriculum({ ...curriculum, ...value });
-                }
-                break;
-            case 'schedule':
-                if (schedule) {
-                    handleUpdateSchedule({ ...schedule, ...value });
-                }
-                break;
-            case 'onboarding':
-                if (onboarding) {
-                    handleUpdateOnboarding({ ...onboarding, ...value });
-                }
-                break;
-            case 'settings':
-                if (settings) {
-                    handleUpdateSettings({ ...settings, ...value });
-                }
-                break;
-            case 'statistics':
-                if (statistics) {
-                    handleUpdateStatistics({ ...statistics, ...value });
-                }
-                break;
-            default:
-                console.warn(`Unknown field: ${field}`);
-        }
-    };
 
     // 커리큘럼 관리 메서드들
     /**
@@ -769,14 +794,6 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
         subjects: [],
         completedSubjects: [],
         currentSemester: 1,
-        updatedAt: new Date().toISOString()
-    };
-
-    const defaultSchedule: Schedule = schedule || {
-        userId: currentUserId || '',
-        currentSemester: '',
-        timetable: [],
-        customEvents: [],
         updatedAt: new Date().toISOString()
     };
 
@@ -927,30 +944,63 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
     );
 };
 
-export const useSchedule = (semester: string) => {
-    const { schedule, updateSchedule, isLoading } = useSeparatedData();
+const mapBackendToCourse = (slot: any): Course => {
+    console.log('[DEBUG] mapBackendToCourse 입력:', slot);
+    
+    // 요일 변환 함수
+    const convertDayOfWeek = (backendDay: string): DayKey => {
+        const dayMap: Record<string, DayKey> = {
+            'MON': 'monday',
+            'TUE': 'tuesday', 
+            'WED': 'wednesday',
+            'THU': 'thursday',
+            'FRI': 'friday',
+            'SAT': 'saturday',
+            'SUN': 'sunday'
+        };
+        
+        const converted = dayMap[backendDay?.toUpperCase()] || 'monday';
+        console.log(`[DEBUG] 요일 변환: ${backendDay} -> ${converted}`);
+        return converted;
+    };
+    
+    const convertedDay = convertDayOfWeek(slot.dayOfWeek);
+    
+    const result: Course = {
+        id: slot.id?.toString() || `temp-${Math.random()}`,
+        code: slot.codeId?.toString() || slot.code_id?.toString() || '',
+        name: slot.courseName || '이름없음',
+        day: convertedDay,
+        startPeriod: slot.startPeriod || 1,
+        endPeriod: slot.endPeriod || 1,
+        startTime: slot.startTime || '',
+        endTime: slot.endTime || '',
+        room: slot.room || '',
+        instructor: slot.instructor || '',
+        credits: slot.credits || 0,
+        type: (slot.type as CourseType) || 'GE',
+        color: slot.color || '#FF6B6B'
+    };
+    
+    console.log('[DEBUG] mapBackendToCourse 출력:', result);
+    return result;
+};
 
-    // 변환 함수들
-    const mapBackendToCourse = (slot: any): Course => ({
-        id: slot.id,
-        code: slot.codeId?.toString() || slot.code || '',
-        name: slot.courseName,
-        day: slot.dayOfWeek,
-        startPeriod: slot.startPeriod,
-        endPeriod: slot.endPeriod,
-        startTime: slot.startTime,
-        endTime: slot.endTime,
-        room: slot.room,
-        instructor: slot.instructor,
-        credits: slot.credits,
-        type: slot.type,
-        color: slot.color
-    });
-
-    const mapCourseToBackend = (course: Course) => ({
+const mapCourseToBackend = (course: Course) => {
+    const dayMap: Record<string, string> = {
+        'monday': 'MON',
+        'tuesday': 'TUE',
+        'wednesday': 'WED', 
+        'thursday': 'THU',
+        'friday': 'FRI',
+        'saturday': 'SAT',
+        'sunday': 'SUN'
+    };
+    
+    return {
         codeId: course.code,
         courseName: course.name,
-        dayOfWeek: course.day,
+        dayOfWeek: dayMap[course.day] || 'MON',
         startPeriod: course.startPeriod,
         endPeriod: course.endPeriod,
         startTime: course.startTime,
@@ -960,87 +1010,72 @@ export const useSchedule = (semester: string) => {
         credits: course.credits,
         type: course.type,
         color: course.color
-    });
+    };
+};
+
+export const useSchedule = (semester: string) => {
+    const { updateSchedule, isLoading } = useSeparatedData();
+    const [localCourses, setLocalCourses] = useState<Course[]>([]);
+    const [currentSemester, setCurrentSemester] = useState<string>(''); // 🔥 현재 학기 추적
+    
+    console.log('🔍 [useSchedule] localCourses:', localCourses);
+    console.log('🔍 [useSchedule] semester:', semester);
+    console.log('🔍 [useSchedule] currentSemester:', currentSemester);
 
     useEffect(() => {
         if (!semester) return;
         
+        if (semester !== currentSemester) {
+            console.log(`🔄 [useSchedule] 학기 변경: ${currentSemester} -> ${semester}`);
+            setLocalCourses([]); // 즉시 초기화
+            setCurrentSemester(semester);
+        }
+        
         const loadData = async () => {
+            console.log('🚀 [useSchedule] 백엔드에서 데이터 로딩:', semester);
+            
             try {
                 const { apiService } = await import('../services/ApiService');
-                console.log('[useSchedule] Auto loading semester:', semester);
-                
                 const backendTimetable = await apiService.getTimetableBySemester(semester);
-                const slots = backendTimetable?.TimetableSlots || backendTimetable?.courses || [];
-                
-                if (slots.length > 0) {
+
+                if (backendTimetable && backendTimetable.TimetableSlots) {
+                    const slots = backendTimetable.TimetableSlots;
                     const mapped = slots.map(mapBackendToCourse);
-                    console.log('[useSchedule] Loaded courses:', mapped);
-                    updateSchedule({
-                        timetable: mapped,
-                        currentSemester: semester
-                    });
+                    
+                    console.log(`🎉 [useSchedule] ${semester} 데이터 로딩 완료:`, mapped.length, '개 과목');
+                    setLocalCourses(mapped);
                 } else {
-                    console.log('[useSchedule] No courses found for semester:', semester);
-                    updateSchedule({
-                        timetable: [],
-                        currentSemester: semester
-                    });
+                    console.log(`📭 [useSchedule] ${semester} 데이터 없음`);
+                    setLocalCourses([]);
                 }
             } catch (error) {
-                console.error('[useSchedule] Failed to load schedule:', error);
-                updateSchedule({
-                    timetable: [],
-                    currentSemester: semester
-                });
+                console.error(`❌ [useSchedule] ${semester} 데이터 로딩 실패:`, error);
+                setLocalCourses([]);
             }
         };
 
         loadData();
-    }, [semester, updateSchedule]);
+    }, [semester, currentSemester]); // 🔥 currentSemester도 의존성에 추가
 
-    // 백엔드에서 학기별 시간표 로드
-    const loadSchedule = async () => {
-        const { apiService } = await import('../services/ApiService');
-        console.log('[useSchedule] loadSchedule semester:', semester);
-        
-        const backendTimetable = await apiService.getTimetableBySemester(semester);
-
-        const slots = backendTimetable?.TimetableSlots || backendTimetable?.courses || [];
-        if (slots.length) {
-            const mapped = slots.map(mapBackendToCourse);
-            updateSchedule({
-                timetable: mapped,
-                currentSemester: semester
-            });
-            return mapped;
-        }
-        return [];
-    };
-
-    // 프론트에서 추가/수정된 과목 저장 시 → 백엔드에도 반영
     const saveSchedule = async (newCourses: Course[]) => {
         const { apiService } = await import('../services/ApiService');
-        console.log('[useSchedule] saveSchedule semester:', semester, newCourses);
-
         const payload = newCourses.map(mapCourseToBackend);
+        
         await apiService.saveTimetable({
             semester,
             courses: payload,
             updatedAt: new Date().toISOString()
         });
-
-        updateSchedule({
-            timetable: newCourses,
-            currentSemester: semester
-        });
+        
+        setLocalCourses(newCourses);
+        console.log(`✅ [useSchedule] ${semester} 저장 완료`);
     };
 
     return {
-        schedule,
-        courses: schedule.timetable || [],
+        schedule: { timetable: localCourses } as any,
+        courses: localCourses,
         isLoading,
-        loadSchedule,
+        loadSchedule: async () => localCourses,
         saveSchedule
     };
 };
