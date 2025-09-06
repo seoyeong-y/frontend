@@ -10,6 +10,7 @@ interface CourseBlockProps {
   course: Course;
   onClick: (course: Course) => void;
   highlight?: boolean;
+  dayIndex: number; 
 }
 
 // 과목 유형별 매핑
@@ -46,8 +47,8 @@ const CourseBlock: React.FC<CourseBlockProps> = ({ course, onClick, highlight })
   const { type, name, room, startTime, endTime, day, startPeriod, endPeriod, instructor, color } = course;
 
   const col = dayKeys.indexOf(day);
-  const rowStart = startPeriod + 1;
-  const rowEnd = endPeriod + 2;
+  const rowStart = startPeriod;
+  const rowEnd = endPeriod + 1;
 
   const style: React.CSSProperties = {
     gridColumnStart: col + 1,
@@ -104,7 +105,7 @@ const CourseBlock: React.FC<CourseBlockProps> = ({ course, onClick, highlight })
           font-size: 11px;
           font-weight: 700;
           color: ${textColor};
-          flex-shrink: 0; /* 상단 정보는 축소되지 않도록 */
+          flex-shrink: 0;
         `}
       >
         <div
@@ -125,10 +126,10 @@ const CourseBlock: React.FC<CourseBlockProps> = ({ course, onClick, highlight })
           css={css`
             opacity: 0.7;
             font-weight: 500;
-            white-space: nowrap; /* 시간은 줄바꿈 방지 */
+            white-space: nowrap;
           `}
         >
-          {`${startTime}~${endTime}`}
+          {`${startTime.slice(0, 5)}~${endTime.slice(0, 5)}`}
         </span>
       </div>
 
@@ -138,14 +139,14 @@ const CourseBlock: React.FC<CourseBlockProps> = ({ course, onClick, highlight })
           flex-grow: 1;
           display: flex;
           flex-direction: column;
-          justify-content: center;
-          min-height: 0; /* flex 아이템이 축소될 수 있도록 */
+          justify-content: flex-start;
+          min-height: 0;
         `}
       >
         <p
           css={css`
             font-weight: 800;
-            font-size: ${periodCount === 1 ? '12px' : periodCount === 2 ? '14px' : '15px'};
+            font-size: 13.5px;
             color: ${textColor};
             line-height: 1.2;
             margin: 0 0 4px 0;
@@ -161,27 +162,10 @@ const CourseBlock: React.FC<CourseBlockProps> = ({ course, onClick, highlight })
           {name}
         </p>
         
-        {periodCount > 1 && room && (
+        {periodCount > 1 && instructor && (
           <p
             css={css`
-              font-size: 11px;
-              color: ${textColor};
-              opacity: 0.8;
-              margin: 0 0 2px 0;
-              overflow: hidden;
-              white-space: nowrap;
-              text-overflow: ellipsis;
-            `}
-            title={room}
-          >
-            {room}
-          </p>
-        )}
-        
-        {periodCount > 2 && instructor && (
-          <p
-            css={css`
-              font-size: 11px;
+              font-size: 12px;
               color: ${textColor};
               opacity: 0.7;
               margin: 0;
@@ -194,6 +178,24 @@ const CourseBlock: React.FC<CourseBlockProps> = ({ course, onClick, highlight })
             {instructor}
           </p>
         )}
+
+        {periodCount > 1 && room && (
+          <p
+            css={css`
+              font-size: 12px;
+              color: ${textColor};
+              opacity: 0.8;
+              margin: 0 0 2px 0;
+              overflow: hidden;
+              white-space: nowrap;
+              text-overflow: ellipsis;
+            `}
+            title={room}
+          >
+            {room}
+          </p>
+        )}
+
       </div>
     </div>
   );
