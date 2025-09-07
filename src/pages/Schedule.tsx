@@ -15,7 +15,8 @@ import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import { ApiError, ErrorCode } from '../errors/ApiError';
 import apiClient from '../config/apiClient';
-import { slotToCourse, courseToSlot } from "@/utils/mapper";
+import { slotToCourse, courseToSlot, reverseDayMap } from "@/utils/mapper";
+import { apiService } from '../services/ApiService';
 
 const CourseEditModal = lazy(() => import('../components/modals/CourseEditModal'));
 const CourseDetailModal = lazy(() => import('../components/modals/CourseDetailModal'));
@@ -290,7 +291,7 @@ const Schedule: React.FC = () => {
                 code: courseData.code || '',
                 instructor: courseData.instructor || '',
                 credits: Number(courseData.credits) || 3,
-                type: courseData.type || 'elective',
+                type: courseData.type || 'GE',
                 day: courseData.day || 'monday',
                 startPeriod: Math.max(1, Math.min(14, Number(courseData.startPeriod) || 1)),
                 endPeriod: Math.max(1, Math.min(14, Number(courseData.endPeriod) || 1)),
@@ -299,22 +300,71 @@ const Schedule: React.FC = () => {
                 room: courseData.room || '',
             };
 
-            // 교시 순서 검증
-            if (sanitizedCourse.startPeriod > sanitizedCourse.endPeriod) {
-                sanitizedCourse.endPeriod = sanitizedCourse.startPeriod;
+            // 백엔드 형식으로 변환
+            const backendCourse = courseToSlot(sanitizedCourse);
+            
+            let newCourses: any[];
+
+            let currentTimetable;
+            try {
+                currentTimetable = await apiService.getTimetableBySemester(semester);
+            } catch (error) {
+                console.log('[DEBUG] 시간표가 존재하지 않음, 새로 생성 예정');
+                currentTimetable = null;
             }
 
-            let newCourses: Course[];
             if (dialogCourse) {
-                newCourses = courses.map(course =>
-                    course.id === dialogCourse.id ? sanitizedCourse : course
-                );
+                const existingSlots = currentTimetable?.TimetableSlots || [];
+                newCourses = existingSlots.map((slot: any) => {
+                    if (slot.id.toString() === dialogCourse.id) {
+                        return {
+                            ...slot,
+                            courseName: sanitizedCourse.name,
+                            instructor: sanitizedCourse.instructor,
+                            dayOfWeek: reverseDayMap[sanitizedCourse.day],
+                            startPeriod: sanitizedCourse.startPeriod,
+                            endPeriod: sanitizedCourse.endPeriod,
+                            startTime: sanitizedCourse.startTime,
+                            endTime: sanitizedCourse.endTime,
+                            room: sanitizedCourse.room,
+                            credits: sanitizedCourse.credits,
+                            type: sanitizedCourse.type,
+                            color: sanitizedCourse.color
+                        };
+                    }
+                    return slot;
+                });
             } else {
-                newCourses = [...courses, sanitizedCourse];
+                const existingSlots = currentTimetable?.TimetableSlots || [];
+                const newSlot = {
+                    courseName: sanitizedCourse.name,
+                    codeId: null,
+                    instructor: sanitizedCourse.instructor,
+                    dayOfWeek: reverseDayMap[sanitizedCourse.day],
+                    startPeriod: sanitizedCourse.startPeriod,
+                    endPeriod: sanitizedCourse.endPeriod,
+                    startTime: sanitizedCourse.startTime,
+                    endTime: sanitizedCourse.endTime,
+                    room: sanitizedCourse.room,
+                    credits: sanitizedCourse.credits,
+                    type: sanitizedCourse.type,
+                    color: sanitizedCourse.color
+                };
+                newCourses = [...existingSlots, newSlot];
             }
+            // 백엔드에 저장
+            await apiService.saveTimetable({
+                semester,
+                courses: newCourses,
+                updatedAt: new Date().toISOString()
+            });
 
-            await saveSchedule(newCourses);
-            await syncWithBackend(newCourses);
+            // 최신 데이터로 화면 업데이트
+            const updatedTimetable = await apiService.getTimetableBySemester(semester);
+            if (updatedTimetable?.TimetableSlots) {
+                const latestCourses = updatedTimetable.TimetableSlots.map(slotToCourse);
+                setLocalCourses(latestCourses);
+            }
             
             showSnackbar('과목이 저장되었습니다.', 'success');
             closeDialog();
@@ -327,31 +377,48 @@ const Schedule: React.FC = () => {
     // 과목 삭제 함수
     const handleDeleteCourse = async (id: string) => {
         try {
-            const newCourses = courses.filter(course => course.id !== id);
+            const currentTimetable = await apiService.getTimetableBySemester(semester);
+            
+            if (currentTimetable?.TimetableSlots) {
+                const updatedSlots = currentTimetable.TimetableSlots.filter(
+                    (slot: any) => slot.id.toString() !== id
+                );
 
-            // 1. 로컬에서 삭제
-            await saveSchedule(newCourses);
+                await apiService.saveTimetable({
+                    semester,
+                    courses: updatedSlots,
+                    updatedAt: new Date().toISOString()
+                });
 
-            // 2. 백엔드에 반영
-            await syncWithBackend(newCourses);
+                const latestTimetable = await apiService.getTimetableBySemester(semester);
+                if (latestTimetable?.TimetableSlots) {
+                    const latestCourses = latestTimetable.TimetableSlots.map(slotToCourse);
+                    setLocalCourses(latestCourses);
+                }
+            }
             
             showSnackbar('과목이 삭제되었습니다.', 'success');
             closeDialog();
-        } catch (error) {
-            handleApiError(error, showSnackbar);
+        } catch (error: any) {
+            console.error('[DEBUG] 삭제 실패:', error);
+            if (error?.response?.data?.message) {
+                showSnackbar(`삭제 실패: ${error.response.data.message}`, 'error');
+            } else {
+                showSnackbar('과목 삭제에 실패했습니다. 다시 시도해주세요.', 'error');
+            }
         }
     };
 
     // 시간표 초기화 함수
     const handleResetConfirm = async () => {
         try {
-            // 1. 로컬에서 초기화
-            await saveSchedule([]);
-
-            // 2. 백엔드에 반영
-            await syncWithBackend([]);
+            const { apiService } = await import('../services/ApiService');
             
-            showSnackbar('시간표가 초기화되었습니다.', 'success');
+            // schedule 자체를 삭제하는 새 API 호출
+            await apiService.deleteTimetable(semester);
+            
+            setLocalCourses([]);
+            showSnackbar('시간표가 완전히 삭제되었습니다.', 'success');
             setResetDialogOpen(false);
         } catch (error) {
             handleApiError(error, showSnackbar);

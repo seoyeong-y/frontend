@@ -2,6 +2,8 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { Course, DayKey, CourseType } from '../types/course';
+import { useAuth } from '../contexts/AuthContext';
+import { BackendNote } from '../services/ApiService';
 import {
     UserProfile,
     GraduationInfo,
@@ -61,9 +63,15 @@ import {
     updateLoginStatistics
 } from '../utils/separatedDataManager';
 
-import { useAuth } from '../contexts/AuthContext';
+const convertBackendNoteToNote = (backendNote: BackendNote, fallbackUserId: string): Note => ({
+    ...backendNote,
+    userId: backendNote.userId || fallbackUserId
+});
 
-// ==== 타입 정의 (생략 부분은 그대로 유지) ====
+let timer: ReturnType<typeof setTimeout>; 
+
+
+// ==== 타입 정의 ====
 interface SeparatedDataContextType {
     userData: any;
     isLoading: boolean;
@@ -170,10 +178,12 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
             try {
                 const { apiService } = await import('../services/ApiService');
                 const notesFromApi = await apiService.getNotes();
-                setNotes(notesFromApi);
+                const convertedNotes = notesFromApi.map(note => 
+                    convertBackendNoteToNote(note, currentUserId || user?.email || '')
+                );
+                setNotes(convertedNotes);
             } catch (error) {
                 setNotes([]);
-                // TODO: 에러 안내 (스낵바 등)
             }
         };
         fetchNotes();
@@ -189,9 +199,15 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
             if (newNote && newNote.id) {
                 // 반드시 백엔드에서 getNotes()로 동기화
                 const notesFromApi = await apiService.getNotes();
-                setNotes(notesFromApi);
+                const convertedNotes = notesFromApi.map(note => 
+                    convertBackendNoteToNote(note, currentUserId || user?.email || '')
+                );
+                setNotes(convertedNotes);
                 console.log('[addNote] notes after add:', notesFromApi.map(n => ({ id: n.id, title: n.title })));
-                return newNote;
+                
+                
+                const convertedNewNote = convertBackendNoteToNote(newNote, currentUserId || user?.email || '');
+                return convertedNewNote;
             }
             // 실패 시 notes를 갱신하지 않음
             console.warn('[addNote] Failed to add note or missing id:', newNote);
@@ -210,18 +226,24 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
             // 모든 속성 지원: title, content, category, tags, pinned, archived, order 등
             const payload = {
                 ...updates,
-                pinned: updates.pinned,
-                archived: updates.archived,
+                pinned: updates.isPinned,
+                archived: updates.isArchived,
                 order: updates.order,
             };
             const updatedNote = await apiService.updateNote(id, payload);
             if (updatedNote) {
                 // 최신 notes 동기화
                 const notesFromApi = await apiService.getNotes();
-                setNotes(notesFromApi);
+                const convertedNotes = notesFromApi.map(note => 
+                    convertBackendNoteToNote(note, currentUserId || user?.email || '')
+                );
+                setNotes(convertedNotes);
                 console.log('[updateNote] notes after update:', notesFromApi.map(n => ({ id: n.id, title: n.title })));
+
+                const convertedUpdatedNote = convertBackendNoteToNote(updatedNote, currentUserId || user?.email || '');
+                return convertedUpdatedNote;
             }
-            return updatedNote;
+            return null;
         } catch (error) {
             console.error('[updateNote] Error:', error);
             return null;
@@ -237,7 +259,10 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
             if (success) {
                 // 최신 notes 동기화
                 const notesFromApi = await apiService.getNotes();
-                setNotes(notesFromApi);
+                const convertedNotes = notesFromApi.map(note => 
+                    convertBackendNoteToNote(note, currentUserId || user?.email || '')
+                );
+                setNotes(convertedNotes);
                 console.log('[deleteNote] notes after delete:', notesFromApi.map(n => ({ id: n.id, title: n.title })));
             }
             return success;
@@ -256,7 +281,6 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
                 return;
             }
 
-            let timer: NodeJS.Timeout | undefined;
             try {
                 timer = setTimeout(() => setIsLoading(true), 100);
 
@@ -314,16 +338,16 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
                 const userRecentSearches = getRecentSearches(currentUserEmail);
 
                 // 상태 업데이트
-                setProfile(userProfile);
+                setProfile(userProfile as UserProfile | null);
                 setGraduationInfo(userGraduationInfo);
                 setCurriculum(userCurriculum);
                 setSchedule(userSchedule);
                 setOnboarding(userOnboarding);
                 setSettings(userSettings);
                 setStatistics(userStatistics);
-                setNotes(userNotes);
+                setNotes(userNotes as Note[]);
                 setMessages(userMessages);
-                setNotifications(userNotifications);
+                setNotifications(userNotifications as NotificationItem[]);
                 setCourses(userCourses);
                 setCompletedCourses(userCompletedCourses);
                 setTimetableCourses(userTimetableCourses);
@@ -417,11 +441,9 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
         if (!currentUserId) return;
 
         try {
-            // 로컬 스토리지 업데이트 (기존 로직)
             const updated = updateUserProfile(currentUserId, updates);
             setProfile(updated);
 
-            // 백엔드에도 업데이트 시도 (선택적)
             if (updates.name || updates.phone || updates.major) {
                 const { userRepository } = await import('../repositories/UserRepository');
 
@@ -470,7 +492,6 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
     const updateUserField = (field: string, value: any) => {
         if (!currentUserEmail) return;
 
-        // 필드별로 적절한 엔티티 업데이트
         switch (field) {
             case 'profile':
                 if (profile) {
@@ -528,7 +549,6 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
         console.log('[handleUpdateSchedule] 최종 schedule:', updatedSchedule);
         console.log('[handleUpdateSchedule] timetable 개수:', updatedSchedule.timetable?.length);
         
-        // 메모리 상태만 업데이트 (로컬스토리지 완전 제거)
         setSchedule(updatedSchedule);
         console.log('[handleUpdateSchedule] 완료! 백엔드 API만 사용합니다.');
     }, [user?.email]);
@@ -752,17 +772,23 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
     };
 
     const addCurriculum = async (newCourse: Course): Promise<void> => {
-        const updatedCourses = [...getCurrentCourses(), newCourse];
-        // Context 와 localStorage 동기화
+        const updatedSubjects = [...(curriculum?.subjects || []), newCourse as any];
         handleUpdateCurriculum({
-            courses: updatedCourses,
-            lastUpdated: new Date().toISOString()
+            subjects: updatedSubjects,
+            updatedAt: new Date().toISOString()
         });
     };
 
     const applyCurriculum = async (curriculum: Course): Promise<void> => {
-        // Apply curriculum to user's timetable or completed courses
-        await addTimetableCourse(curriculum);
+        const subject: Subject = {
+            id: curriculum.id,
+            name: curriculum.name,
+            code: curriculum.code,
+            credits: 0,
+            type: '전공선택',
+            semester: 1,
+        };
+        await handleAddTimetableCourse(subject);
     };
 
     // 기본값들 (로딩 중이거나 데이터가 없을 때 사용)
@@ -947,7 +973,8 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
 const mapBackendToCourse = (slot: any): Course => {
     console.log('[DEBUG] mapBackendToCourse 입력:', slot);
     
-    // 요일 변환 함수
+    const lectureCode = slot.LectureCode?.code || slot.codeId?.toString() || slot.code_id?.toString() || '';
+
     const convertDayOfWeek = (backendDay: string): DayKey => {
         const dayMap: Record<string, DayKey> = {
             'MON': 'monday',
@@ -960,7 +987,6 @@ const mapBackendToCourse = (slot: any): Course => {
         };
         
         const converted = dayMap[backendDay?.toUpperCase()] || 'monday';
-        console.log(`[DEBUG] 요일 변환: ${backendDay} -> ${converted}`);
         return converted;
     };
     
@@ -968,7 +994,7 @@ const mapBackendToCourse = (slot: any): Course => {
     
     const result: Course = {
         id: slot.id?.toString() || `temp-${Math.random()}`,
-        code: slot.codeId?.toString() || slot.code_id?.toString() || '',
+        code: lectureCode,
         name: slot.courseName || '이름없음',
         day: convertedDay,
         startPeriod: slot.startPeriod || 1,
@@ -1016,7 +1042,7 @@ const mapCourseToBackend = (course: Course) => {
 export const useSchedule = (semester: string) => {
     const { updateSchedule, isLoading } = useSeparatedData();
     const [localCourses, setLocalCourses] = useState<Course[]>([]);
-    const [currentSemester, setCurrentSemester] = useState<string>(''); // 현재 학기 추적
+    const [currentSemester, setCurrentSemester] = useState<string>('');
     
     console.log('[useSchedule] localCourses:', localCourses);
     console.log('[useSchedule] semester:', semester);
@@ -1027,12 +1053,12 @@ export const useSchedule = (semester: string) => {
         
         if (semester !== currentSemester) {
             console.log(`[useSchedule] 학기 변경: ${currentSemester} -> ${semester}`);
-            setLocalCourses([]); // 즉시 초기화
+            setLocalCourses([]);
             setCurrentSemester(semester);
         }
         
         const loadData = async () => {
-            console.log('🚀 [useSchedule] 백엔드에서 데이터 로딩:', semester);
+            console.log('[useSchedule] 백엔드에서 데이터 로딩:', semester);
             
             try {
                 const { apiService } = await import('../services/ApiService');
@@ -1045,17 +1071,17 @@ export const useSchedule = (semester: string) => {
                     console.log(`[useSchedule] ${semester} 데이터 로딩 완료:`, mapped.length, '개 과목');
                     setLocalCourses(mapped);
                 } else {
-                    console.log(`📭 [useSchedule] ${semester} 데이터 없음`);
+                    console.log(`[useSchedule] ${semester} 데이터 없음`);
                     setLocalCourses([]);
                 }
             } catch (error) {
-                console.error(`❌ [useSchedule] ${semester} 데이터 로딩 실패:`, error);
+                console.error(`[useSchedule] ${semester} 데이터 로딩 실패:`, error);
                 setLocalCourses([]);
             }
         };
 
         loadData();
-    }, [semester, currentSemester]); // currentSemester도 의존성에 추가
+    }, [semester, currentSemester]);
 
     const saveSchedule = async (newCourses: Course[]) => {
         const { apiService } = await import('../services/ApiService');

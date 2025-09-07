@@ -142,7 +142,6 @@ const CourseEditModal: React.FC<CourseEditModalProps> = ({
                         value={form.code}
                         onChange={handleChange}
                         fullWidth
-                        required
                         placeholder="예: AAK20013"
                     />
 

@@ -12,8 +12,9 @@ export interface User {
 
 // 사용자 프로필 (User와 1:1)
 export interface UserProfile {
-    userId: string; // User.id 참조
-    studentId: string;
+    userId: string;
+    name?: string;
+    studentId: string | undefined;
     major: string;
     grade: number;
     semester: number;
@@ -147,14 +148,16 @@ export interface UserStatistics {
 // 메모 (User와 1:N)
 export interface Note {
     id: string;
-    userId: string; // User.id 참조
+    userId?: string | undefined;
     title: string;
     content: string;
-    category: string;
+    category?: string | undefined;
     tags?: string[];
-    createdAt: string;
-    updatedAt: string;
+    createdAt?: string | undefined;
+    updatedAt?: string | undefined;
     isPinned?: boolean;
+    isArchived?: boolean;
+    order?: number;
 }
 
 // 채팅 메시지 (User와 1:N)

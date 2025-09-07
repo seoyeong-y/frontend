@@ -1,5 +1,4 @@
 import apiClient from '../config/apiClient';
-import { courseToSlot } from "@/utils/mapper";
 
 // 캐시와 debouncing을 위한 유틸리티
 const cache = new Map<string, { data: any; timestamp: number; ttl: number }>();
@@ -24,7 +23,7 @@ const debounce = <T extends (...args: any[]) => any>(
     func: T,
     wait: number
 ): ((...args: Parameters<T>) => Promise<ReturnType<T>>) => {
-    let timeout: NodeJS.Timeout;
+    let timeout: ReturnType<typeof setTimeout>; 
     return (...args: Parameters<T>) => {
         return new Promise((resolve) => {
             clearTimeout(timeout);
@@ -51,7 +50,7 @@ export interface BackendUser {
 
 export interface BackendProfile {
     userId: string;
-    email: string;
+    email?: string;
     name: string;
     studentId?: string;
     major?: string;
@@ -61,6 +60,7 @@ export interface BackendProfile {
     onboardingCompleted?: boolean;
     provider?: string;
     createdAt?: string;
+    updatedAt?: string;
 }
 
 export interface BackendRecord {
@@ -125,6 +125,9 @@ export interface BackendGraduationStatus {
     requiredCourses: string[];
     missingCourses: string[];
     isGraduationReady: boolean;
+    progressRatio?: number;
+    canGraduate?: boolean;
+    recommendations?: any[];
 }
 
 // ===== API Response 타입 =====
@@ -215,7 +218,6 @@ class ApiService {
             return res.data || [];
         } catch (error) {
             console.error('[ApiService] Failed to fetch semesters:', error);
-            // 에러 발생 시 기본 학기 목록 반환
             const currentYear = new Date().getFullYear();
             return [
                 `${currentYear-1}-2학기`,
@@ -225,35 +227,42 @@ class ApiService {
         }
     }
 
-// ===== 시간표 관리 (완전 연동) =====
+    
+    // ===== 시간표 관리 =====
     
     /**
      * 현재 학기 시간표 조회
      */
-    async getCurrentTimetable(semester: string): Promise<BackendTimetable | null> {
-        console.log('[ApiService] Fetching current timetable for semester:', semester);
+    async getCurrentTimetable(semester?: string): Promise<BackendTimetable | null> {
+        if (!semester) {
+            const currentDate = new Date();
+            const currentYear = currentDate.getFullYear();
+            const currentMonth = currentDate.getMonth() + 1;
+            
+            const currentSemester = (currentMonth >= 3 && currentMonth <= 8) ? 1 : 2;
+            semester = `${currentYear}-${currentSemester}학기`;
+        }
+        
         try {
             const response = await apiClient.get<ApiResponse<BackendTimetable>>('/timetable/current', {
                 params: { semester }
             });
-            
-            console.log('[ApiService] Current timetable raw response:', response.data);
-            
+                
             const { data: res } = response;
             if (!res.success) {
-                console.warn('[ApiService] Current timetable not found:', res.message);
+                console.warn('[ApiService] 현재 시간표를 찾을 수 없음:', res.message);
                 return null;
             }
             
-            console.log('[ApiService] Current timetable loaded successfully:', res.data);
+            console.log('[ApiService] 현재 시간표 조회 성공:', res.data);
             return res.data || null;
         } catch (error: any) {
             if (error.response?.status === 404) {
-                console.log('[ApiService] No current timetable exists');
+                console.log('[ApiService] 현재 시간표가 존재하지 않음');
                 return null;
             }
             
-            console.error('[ApiService] Failed to fetch current timetable:', {
+            console.error('[ApiService] 현재 시간표 조회 실패:', {
                 message: error.message,
                 status: error.response?.status,
                 data: error.response?.data
@@ -269,7 +278,7 @@ class ApiService {
     async getTimetableBySemester(semester: string): Promise<BackendTimetable | null> {
         console.log('[ApiService] Fetching timetable for semester:', semester);
         try {
-            const encoded = encodeURIComponent(semester);  // 👈 인코딩 추가
+            const encoded = encodeURIComponent(semester);
             const { data: res } = await apiClient.get<ApiResponse<BackendTimetable>>(`/timetable/semester/${encoded}`);
             if (!res.success) {
                 console.warn('[ApiService] Timetable not found for semester:', semester);
@@ -302,7 +311,7 @@ class ApiService {
 
 
     /**
-     * 시간표 저장 (새로 생성 또는 업데이트)
+     * 시간표 생성/업데이트
      */
     async saveTimetable(timetableData: {
         semester: string;
@@ -312,7 +321,6 @@ class ApiService {
         console.log('[ApiService] Saving timetable:', timetableData);
         
         try {
-            // 데이터 검증
             if (!timetableData.semester) {
                 throw new Error('Semester is required');
             }
@@ -321,13 +329,11 @@ class ApiService {
             }
 
             const payload = {
-                semesterCode: timetableData.semester, 
-                courses: (timetableData.courses || []).map(course => courseToSlot(course)),
+                semester: timetableData.semester, 
+                courses: timetableData.courses,
                 year: new Date().getFullYear(),
-                updatedAt: timetableData.updatedAt || new Date().toISOString()
             };
 
-            // 기존 시간표가 있는지 확인
             const existingTimetable = await this.getTimetableBySemester(timetableData.semester);
             
             let response;
@@ -360,71 +366,15 @@ class ApiService {
     }
 
     /**
-     * 시간표 삭제
+     * 시간표 삭제 (초기화)
      */
     async deleteTimetable(semester: string): Promise<boolean> {
-        console.log('[ApiService] Deleting timetable for semester:', semester);
-        
         try {
-            const existingTimetable = await this.getTimetableBySemester(semester);
-            
-            if (!existingTimetable?.id) {
-                console.log('[ApiService] No timetable to delete for semester:', semester);
-                return true; // 이미 없으면 성공으로 간주
-            }
-
-            const { data: res } = await apiClient.delete<ApiResponse<boolean>>(
-                `/timetable/${existingTimetable.id}`
-            );
-
-            if (!res.success) {
-                throw new Error(res.message || 'Failed to delete timetable');
-            }
-
-            console.log('[ApiService] Timetable deleted successfully');
-            return true;
+            const encoded = encodeURIComponent(semester);
+            const { data: res } = await apiClient.delete(`/timetable/semester/${encoded}`);
+            return res.success;
         } catch (error) {
             console.error('[ApiService] Failed to delete timetable:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * 시간표에 과목 추가
-     */
-    async addCourseToTimetable(semester: string, courseData: {
-        name: string;
-        code?: string;
-        instructor?: string;
-        credits?: number;
-        type?: string;
-        day: string;
-        startTime: string;
-        endTime: string;
-        startPeriod?: number;
-        endPeriod?: number;
-        room?: string;
-    }): Promise<BackendTimetable> {
-        console.log('[ApiService] Adding course to timetable:', courseData);
-        
-        try {
-            const currentTimetable = await this.getTimetableBySemester(semester);
-            
-            const newCourse = {
-                id: Date.now().toString(),
-                ...courseData
-            };
-
-            const updatedCourses = currentTimetable 
-                ? [...(currentTimetable.courses || []), newCourse]
-                : [newCourse];
-
-            return await this.saveTimetable({
-                semester,
-                courses: updatedCourses
-            });
-        } catch (error) {
-            console.error('[ApiService] Failed to add course to timetable:', error);
             throw error;
         }
     }
@@ -699,8 +649,8 @@ class ApiService {
         // 필드명 매핑: pinned → isPinned, archived → isArchived
         const mappedUpdates = {
             ...updates,
-            isPinned: updates.pinned !== undefined ? updates.pinned : updates.isPinned,
-            isArchived: updates.archived !== undefined ? updates.archived : updates.isArchived,
+            isPinned: updates.pinned !== undefined ? updates.pinned : updates.pinned,
+            isArchived: updates.archived !== undefined ? updates.archived : updates.archived,
         };
         delete (mappedUpdates as any).pinned;
         delete (mappedUpdates as any).archived;
@@ -780,8 +730,8 @@ class ApiService {
         console.log('[ApiService] Marking notification as read:', id);
         try {
             const response = await apiClient.patch<{ success: boolean; message?: string }>(`/notifications/${id}/read`);
-            if (!response.success) {
-                throw new Error(response.message || 'Failed to mark notification as read');
+            if (!response.data.success) {
+                throw new Error(response.data.message || 'Failed to mark notification as read');
             }
             return true;
         } catch (error) {
@@ -839,7 +789,16 @@ class ApiService {
         const token = localStorage.getItem('accessToken');
         if (!token) {
             console.warn('[ApiService] No access token found, using mock data');
-            return this.getMockDashboardData();
+            return {
+                totalCredits: 0,
+                graduationProgress: 0,
+                canGraduate: false,
+                upcomingCourses: [],
+                recentNotes: [],
+                notifications: [],
+                missingRequiredCourses: [],
+                recommendations: []
+            };
         }
 
         try {
@@ -870,36 +829,17 @@ class ApiService {
             };
         } catch (error) {
             console.error('[ApiService] Failed to fetch dashboard summary:', error);
-            return this.getMockDashboardData();
+            return {
+                totalCredits: 0,
+                graduationProgress: 0,
+                canGraduate: false,
+                upcomingCourses: [],
+                recentNotes: [],
+                notifications: [],
+                missingRequiredCourses: [],
+                recommendations: []
+            };
         }
-    }
-
-    // Mock 대시보드 데이터 (인증 실패 시 대안)
-    private getMockDashboardData() {
-        return {
-            totalCredits: 89,
-            graduationProgress: 68,
-            canGraduate: false,
-            upcomingCourses: [
-                { name: '컴퓨터네트워크', time: '월 13:30-15:20' },
-                { name: '웹서비스프로그래밍', time: '화 10:30-12:20' }
-            ],
-            recentNotes: [
-                { title: '알고리즘 정리', content: '퀵소트, 머지소트 구현' },
-                { title: '네트워크 과제', content: 'TCP/IP 모델 정리' }
-            ],
-            notifications: [
-                { title: '과제 제출 마감', message: '데이터베이스 과제 내일까지', isRead: false }
-            ],
-            missingRequiredCourses: [
-                { name: '종합설계기획', credits: 1 },
-                { name: '종합설계1', credits: 3 },
-                { name: '종합설계2', credits: 3 }
-            ],
-            recommendations: [
-                { type: 'major_required', message: '종합설계 과목 이수를 권장합니다.' }
-            ]
-        };
     }
 }
 

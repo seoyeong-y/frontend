@@ -10,7 +10,7 @@ const dayMap: Record<string, DayKey> = {
   SUN: "sunday",
 };
 
-const reverseDayMap: Record<DayKey, string> = {
+export const reverseDayMap: Record<DayKey, string> = {
   monday: "MON",
   tuesday: "TUE",
   wednesday: "WED",
@@ -21,10 +21,12 @@ const reverseDayMap: Record<DayKey, string> = {
 };
 
 export function slotToCourse(slot: any): Course {
+  const lectureCode = slot.LectureCode?.code || slot.codeId?.toString() || "";
+
   return {
     id: slot.id?.toString() || Date.now().toString(),
     name: slot.courseName || "이름 없음",
-    code: slot.codeId?.toString() || "",
+    code: lectureCode,
     instructor: slot.instructor || "",
     day: slot.dayOfWeek ? dayMap[slot.dayOfWeek] : "monday",
     startPeriod: slot.startPeriod,
@@ -40,9 +42,8 @@ export function slotToCourse(slot: any): Course {
 
 export function courseToSlot(course: Course): any {
   return {
-    id: course.id,
     courseName: course.name,
-    codeId: course.code,
+    codeId: course.code || null,
     instructor: course.instructor,
     dayOfWeek: reverseDayMap[course.day],
     startPeriod: course.startPeriod,
