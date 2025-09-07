@@ -155,7 +155,7 @@ const Schedule: React.FC = () => {
         console.log('현재 semester 상태:', semester);
     }, [semester]);
 
-    const { courses: timetableSlots, isLoading, saveSchedule } = useSchedule(semester);
+    const { courses: timetableSlots, isLoading, saveSchedule, setLocalCourses, updateLocalOnly } = useSchedule(semester);
 
     // 서버와 동기화하는 함수
     const syncWithBackend = useCallback(async (newCourses: Course[]) => {
@@ -183,6 +183,7 @@ const Schedule: React.FC = () => {
     }, [user?.email, semester]);
 
     // 데이터 동기화 함수
+    // 데이터 동기화 함수
     const syncDataWithBackend = useCallback(async () => {
         if (!user?.email) return;
 
@@ -190,16 +191,31 @@ const Schedule: React.FC = () => {
         try {
             const { apiService } = await import('../services/ApiService');
             const backendTimetable = await apiService.getCurrentTimetable(semester);
-                console.log('[DEBUG] backendTimetable raw:', JSON.stringify(backendTimetable, null, 2));
+            console.log('[DEBUG] backendTimetable raw:', JSON.stringify(backendTimetable, null, 2));
+            
+            // 백엔드에서 가져온 데이터를 화면에 즉시 반영
+            if (backendTimetable?.TimetableSlots && backendTimetable.TimetableSlots.length > 0) {
+                const latestCourses = backendTimetable.TimetableSlots
+                    .filter(slot => slot.courseName && slot.dayOfWeek) // 유효한 데이터만 필터링
+                    .map(slotToCourse);
+                
+                updateLocalOnly(latestCourses);
+                console.log(`[DEBUG] 동기화 완료: ${latestCourses.length}개 과목 반영`);
+                showSnackbar(`${latestCourses.length}개 과목이 동기화되었습니다.`, 'success');
+            } else {
+                updateLocalOnly([]);
+                showSnackbar('동기화 완료: 저장된 과목이 없습니다.', 'info');
+            }
                 
             setLastSyncTime(new Date());
         } catch (error) {
             console.warn('[Schedule] Sync failed:', error);
             handleApiError(error, showSnackbar);
+            showSnackbar('동기화에 실패했습니다. 다시 시도해주세요.', 'error');
         } finally {
             setIsDataSyncing(false);
         }
-    }, [user?.email, semester, showSnackbar]);  
+    }, [user?.email, semester, showSnackbar, updateLocalOnly]);    
 
     useEffect(() => {
         if (!user?.email) return;
@@ -221,20 +237,20 @@ const Schedule: React.FC = () => {
 
     useEffect(() => {
         console.log('=== Schedule.tsx 디버깅 ===');
-        console.log('📊 timetableSlots:', timetableSlots);
-        console.log('📈 timetableSlots 길이:', timetableSlots?.length);
-        console.log('⏳ isLoading:', isLoading);
-        console.log('🎯 semester:', semester);
+        console.log('timetableSlots:', timetableSlots);
+        console.log('timetableSlots 길이:', timetableSlots?.length);
+        console.log('isLoading:', isLoading);
+        console.log('semester:', semester);
         
         if (timetableSlots && timetableSlots.length > 0) {
-            console.log('🎉 Schedule.tsx에서 과목 감지!');
-            console.log('🎉 첫 번째 과목 샘플:', timetableSlots[0]);
-            console.log('📋 모든 과목:', timetableSlots.map(c => `${c.name} (${c.day})`));
+            console.log('Schedule.tsx에서 과목 감지!');
+            console.log('첫 번째 과목 샘플:', timetableSlots[0]);
+            console.log('모든 과목:', timetableSlots.map(c => `${c.name} (${c.day})`));
         } else {
-            console.log('😢 Schedule.tsx에서 timetableSlots가 비어있음');
-            console.log('🔍 timetableSlots 타입:', typeof timetableSlots);
-            console.log('🔍 timetableSlots === null?', timetableSlots === null);
-            console.log('🔍 timetableSlots === undefined?', timetableSlots === undefined);
+            console.log('Schedule.tsx에서 timetableSlots가 비어있음');
+            console.log('timetableSlots 타입:', typeof timetableSlots);
+            console.log('timetableSlots === null?', timetableSlots === null);
+            console.log('timetableSlots === undefined?', timetableSlots === undefined);
         }
         
         // TimetableGrid에 전달되는 props도 확인
@@ -345,7 +361,6 @@ const Schedule: React.FC = () => {
     // 기타 핸들러들
     const handleAddCourse = () => showDialog();
     const handleEditCourse = (course: Course) => showDialog(course);
-    
     const handleExcelUpload = async (file: File) => {
         try {
             showSnackbar('엑셀 업로드 중...', 'info');
@@ -360,11 +375,27 @@ const Schedule: React.FC = () => {
                 }
             });
 
-            if (response.data?.success && response.data.data?.courses) {
-                const backendCourses = response.data.data.courses.map(slotToCourse);
-                await saveSchedule(backendCourses);
+            if (response.data?.success) {
+                try {
+                    const { apiService } = await import('../services/ApiService');
+                    const backendTimetable = await apiService.getTimetableBySemester(semester);
+                    
+                    if (backendTimetable?.TimetableSlots && backendTimetable.TimetableSlots.length > 0) {
+                        const latestCourses = backendTimetable.TimetableSlots.map(slotToCourse);
+                        
+                        setLocalCourses(latestCourses); // 직접 상태 업데이트
+                        
+                        showSnackbar(`엑셀에서 ${latestCourses.length}개 과목이 반영되었습니다.`, 'success');
+                    } else {
+                        showSnackbar('엑셀 업로드는 성공했지만 과목 데이터를 가져오지 못했습니다.', 'warning');
+                    }
+                } catch (fetchError) {
+                    console.error('업로드 후 데이터 조회 실패:', fetchError);
+                    showSnackbar('엑셀 업로드는 성공했습니다. 새로고침하여 확인해주세요.', 'success');
+                }
+            } else {
+                showSnackbar('엑셀 업로드 실패: ' + (response.data?.message || '알 수 없는 오류'), 'error');
             }
-            showSnackbar('엑셀에서 시간표가 반영되었습니다.', 'success');
         } catch (error) {
             console.error('엑셀 업로드 실패:', error);
             showSnackbar('엑셀 업로드 실패. 파일을 확인해주세요.', 'error');
@@ -372,7 +403,6 @@ const Schedule: React.FC = () => {
             closeExcelModal();
         }
     };
-
 
     const handlePinClick = () => {
         if (!user?.email) return;
@@ -385,7 +415,7 @@ const Schedule: React.FC = () => {
 
     const handleSemesterChange = (e: SelectChangeEvent) => {
         const newSemester = e.target.value;
-        console.log(`🔄 [Schedule] 학기 변경: ${semester} -> ${newSemester}`);
+        console.log(`[Schedule] 학기 변경: ${semester} -> ${newSemester}`);
         setSemester(newSemester);
     };
 

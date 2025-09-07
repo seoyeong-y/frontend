@@ -514,8 +514,8 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
 
     // 시간표 관리
     const handleUpdateSchedule = useCallback(async (scheduleUpdate: Partial<Schedule>) => {
-        console.log('🔄 [handleUpdateSchedule] 호출됨!');
-        console.log('🔄 [handleUpdateSchedule] 입력 데이터:', scheduleUpdate);
+        console.log('[handleUpdateSchedule] 호출됨!');
+        console.log('[handleUpdateSchedule] 입력 데이터:', scheduleUpdate);
         
         const updatedSchedule = { 
             userId: user?.email || '',
@@ -525,12 +525,12 @@ export const SeparatedDataProvider: React.FC<SeparatedDataProviderProps> = ({
             updatedAt: new Date().toISOString()
         };
         
-        console.log('🔄 [handleUpdateSchedule] 최종 schedule:', updatedSchedule);
-        console.log('🔄 [handleUpdateSchedule] timetable 개수:', updatedSchedule.timetable?.length);
+        console.log('[handleUpdateSchedule] 최종 schedule:', updatedSchedule);
+        console.log('[handleUpdateSchedule] timetable 개수:', updatedSchedule.timetable?.length);
         
-        // 🔥 메모리 상태만 업데이트 (로컬스토리지 완전 제거)
+        // 메모리 상태만 업데이트 (로컬스토리지 완전 제거)
         setSchedule(updatedSchedule);
-        console.log('✅ [handleUpdateSchedule] 완료! 백엔드 API만 사용합니다.');
+        console.log('[handleUpdateSchedule] 완료! 백엔드 API만 사용합니다.');
     }, [user?.email]);
 
     // 온보딩 관리
@@ -1016,17 +1016,17 @@ const mapCourseToBackend = (course: Course) => {
 export const useSchedule = (semester: string) => {
     const { updateSchedule, isLoading } = useSeparatedData();
     const [localCourses, setLocalCourses] = useState<Course[]>([]);
-    const [currentSemester, setCurrentSemester] = useState<string>(''); // 🔥 현재 학기 추적
+    const [currentSemester, setCurrentSemester] = useState<string>(''); // 현재 학기 추적
     
-    console.log('🔍 [useSchedule] localCourses:', localCourses);
-    console.log('🔍 [useSchedule] semester:', semester);
-    console.log('🔍 [useSchedule] currentSemester:', currentSemester);
+    console.log('[useSchedule] localCourses:', localCourses);
+    console.log('[useSchedule] semester:', semester);
+    console.log('[useSchedule] currentSemester:', currentSemester);
 
     useEffect(() => {
         if (!semester) return;
         
         if (semester !== currentSemester) {
-            console.log(`🔄 [useSchedule] 학기 변경: ${currentSemester} -> ${semester}`);
+            console.log(`[useSchedule] 학기 변경: ${currentSemester} -> ${semester}`);
             setLocalCourses([]); // 즉시 초기화
             setCurrentSemester(semester);
         }
@@ -1042,7 +1042,7 @@ export const useSchedule = (semester: string) => {
                     const slots = backendTimetable.TimetableSlots;
                     const mapped = slots.map(mapBackendToCourse);
                     
-                    console.log(`🎉 [useSchedule] ${semester} 데이터 로딩 완료:`, mapped.length, '개 과목');
+                    console.log(`[useSchedule] ${semester} 데이터 로딩 완료:`, mapped.length, '개 과목');
                     setLocalCourses(mapped);
                 } else {
                     console.log(`📭 [useSchedule] ${semester} 데이터 없음`);
@@ -1055,7 +1055,7 @@ export const useSchedule = (semester: string) => {
         };
 
         loadData();
-    }, [semester, currentSemester]); // 🔥 currentSemester도 의존성에 추가
+    }, [semester, currentSemester]); // currentSemester도 의존성에 추가
 
     const saveSchedule = async (newCourses: Course[]) => {
         const { apiService } = await import('../services/ApiService');
@@ -1068,7 +1068,12 @@ export const useSchedule = (semester: string) => {
         });
         
         setLocalCourses(newCourses);
-        console.log(`✅ [useSchedule] ${semester} 저장 완료`);
+        console.log(`[useSchedule] ${semester} 저장 완료`);
+    };
+
+    const updateLocalOnly = (newCourses: Course[]) => {
+        setLocalCourses(newCourses);
+        console.log(`[useSchedule] ${semester} 로컬 업데이트: ${newCourses.length}개 과목`);
     };
 
     return {
@@ -1076,7 +1081,9 @@ export const useSchedule = (semester: string) => {
         courses: localCourses,
         isLoading,
         loadSchedule: async () => localCourses,
-        saveSchedule
+        saveSchedule,
+        setLocalCourses,
+        updateLocalOnly
     };
 };
 

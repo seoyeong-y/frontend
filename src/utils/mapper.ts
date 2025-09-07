@@ -20,7 +20,6 @@ const reverseDayMap: Record<DayKey, string> = {
   sunday: "SUN"
 };
 
-// slot → course
 export function slotToCourse(slot: any): Course {
   return {
     id: slot.id?.toString() || Date.now().toString(),
@@ -39,7 +38,6 @@ export function slotToCourse(slot: any): Course {
   };
 }
 
-// course → slot
 export function courseToSlot(course: Course): any {
   return {
     id: course.id,
