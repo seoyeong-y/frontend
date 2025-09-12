@@ -31,6 +31,7 @@ export interface CurriculumLecture {
     grade: number;
     isCompleted?: boolean;
     lectureCode?: LectureCode;
+    recordGrade?: string;
 
     courseCode?: string;
     courseName?: string;
@@ -61,7 +62,7 @@ export interface Lecture {
 }
 
 export interface Course {
-    id: string;
+    id: number;
     name: string;
     category: string;
     type: string;
